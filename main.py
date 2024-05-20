@@ -1,3 +1,4 @@
+import logging
 import os
 import torch
 import random
@@ -9,6 +10,8 @@ from train import Trainer
 from utils import Report
 from data import get_dataset
 from config import Config
+
+logger = logging.getLogger('FMANet')
 
 
 def count_parameters(model):
@@ -66,6 +69,7 @@ def test_custom(config):
     model = FMANet(config=config)
     trainer = Trainer(config=config, model=model)
     trainer.load_best_model()
+    logger.info('Start testing...')
     trainer.test(test_dataloader)
 
 

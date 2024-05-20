@@ -1,14 +1,19 @@
+import logging
 import os
 import time
 import torch
+from tqdm import tqdm
 
 from utils import Train_Report, TestReport, SaveManager
+
+logger = logging.getLogger('FMANet')
 
 
 class Trainer:
     def __init__(self, config, model):
         self.config = config
         self.model = model
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Define the device
         if self.config.save_train_img:
             self.save_manager = SaveManager(config)
         self.criterion = torch.nn.L1Loss()
@@ -26,7 +31,7 @@ class Trainer:
         self.checkpoint_path = os.path.join(self.config.save_dir, f'model_stage{self.config.stage}')
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
-        self.model.cuda()
+        self.model.to(self.device)  # Move model to the defined device
 
     def save_checkpoint(self, epoch):
         D_state_dict = {'epoch': epoch,
@@ -60,7 +65,7 @@ class Trainer:
 
     def load_checkpoint(self, epoch=None):
         if epoch is None:
-            D_state_dict = torch.load(self.checkpoint_path + '/model_D_latest.pt')
+            D_state_dict = torch.load(self.checkpoint_path + '/model_D_latest.pt', map_location=self.device)  # Add map_location
             self.model.degradation_learning_network.load_state_dict(D_state_dict['model_D_state_dict'])
             self.optimizer_D.load_state_dict(D_state_dict['optimizer_D_state_dict'])
             self.scheduler_D.load_state_dict(D_state_dict['scheduler_D_state_dict'])
@@ -68,7 +73,7 @@ class Trainer:
             print(f'load degradation learning network status from {self.checkpoint_path}/model_D_latest.pt, epoch: {last_epoch}')
 
             if self.config.stage == 2:
-                R_state_dict = torch.load(self.checkpoint_path + '/model_R_latest.pt')
+                R_state_dict = torch.load(self.checkpoint_path + '/model_R_latest.pt', map_location=self.device)  # Add map_location
                 self.model.restoration_network.load_state_dict(R_state_dict['model_R_state_dict'])
                 self.optimizer_R.load_state_dict(R_state_dict['optimizer_R_state_dict'])
                 self.scheduler_R.load_state_dict(R_state_dict['scheduler_R_state_dict'])
@@ -76,7 +81,7 @@ class Trainer:
                 print(f'load restoration network status from {self.checkpoint_path}/model_R_latest.pt, epoch: {last_epoch}')
 
         else:
-            D_state_dict = torch.load(self.checkpoint_path + '/model_D_' + str(epoch) + '.pt')
+            D_state_dict = torch.load(self.checkpoint_path + '/model_D_' + str(epoch) + '.pt', map_location=self.device)  # Add map_location
             self.model.degradation_learning_network.load_state_dict(D_state_dict['model_D_state_dict'])
             self.optimizer_D.load_state_dict(D_state_dict['optimizer_D_state_dict'])
             self.scheduler_D.load_state_dict(D_state_dict['scheduler_D_state_dict'])
@@ -84,7 +89,7 @@ class Trainer:
             print(f'load degradation learning network status from {self.checkpoint_path}/model_D_{epoch}.pt, epoch: {last_epoch}')
 
             if self.config.stage == 2:
-                R_state_dict = torch.load(self.checkpoint_path + '/model_R_' + str(epoch) + '.pt')
+                R_state_dict = torch.load(self.checkpoint_path + '/model_R_' + str(epoch) + '.pt', map_location=self.device)  # Add map_location
                 self.model.restoration_network.load_state_dict(R_state_dict['model_R_state_dict'])
                 self.optimizer_R.load_state_dict(R_state_dict['optimizer_R_state_dict'])
                 self.scheduler_R.load_state_dict(R_state_dict['scheduler_R_state_dict'])
@@ -94,18 +99,18 @@ class Trainer:
         return last_epoch
 
     def load_best_model(self):
-        D_state_dict = torch.load(self.checkpoint_path + '/model_D_best.pt')
+        D_state_dict = torch.load(self.checkpoint_path + '/model_D_best.pt', map_location=self.device)  # Add map_location
         self.model.degradation_learning_network.load_state_dict(D_state_dict['model_D_state_dict'])
         print(f'load degradation learning network status from {self.checkpoint_path}/model_D_best.pt, epoch: {D_state_dict["epoch"]}')
 
         if self.config.stage == 2:
-            R_state_dict = torch.load(self.checkpoint_path + '/model_R_best.pt')
+            R_state_dict = torch.load(self.checkpoint_path + '/model_R_best.pt', map_location=self.device)  # Add map_location)
             self.model.restoration_network.load_state_dict(R_state_dict['model_R_state_dict'])
             print(f'load restoration network status from {self.checkpoint_path}/model_R_best.pt, epoch: {R_state_dict["epoch"]}')
 
     def load_best_stage1_model(self):
         path = self.checkpoint_path.replace(f'model_stage{self.config.stage}', 'model_stage1')
-        state_dict = torch.load(path + '/model_D_best.pt')
+        state_dict = torch.load(path + '/model_D_best.pt', map_location=self.device)  # Add map_location)
         self.model.degradation_learning_network.load_state_dict(state_dict['model_D_state_dict'])
         self.optimizer_D.load_state_dict(state_dict['optimizer_D_state_dict'])
         self.scheduler_D.load_state_dict(state_dict['scheduler_D_state_dict'])
@@ -117,10 +122,10 @@ class Trainer:
         start = time.time()
 
         for idx, (lr_blur_seq, hr_sharp_seq, lr_sharp_seq, flow) in enumerate(dataloader):
-            lr_blur_seq = lr_blur_seq.cuda()
-            hr_sharp_seq = hr_sharp_seq.cuda()
-            lr_sharp_seq = lr_sharp_seq.cuda()
-            flow = flow.cuda()
+            lr_blur_seq = lr_blur_seq.to(self.device)
+            hr_sharp_seq = hr_sharp_seq.to(self.device)
+            lr_sharp_seq = lr_sharp_seq.to(self.device)
+            flow = flow.to(self.device)
 
             result_dict = self.model(lr_blur_seq, hr_sharp_seq)
 
@@ -199,10 +204,10 @@ class Trainer:
 
         with torch.no_grad():
             for idx, (lr_blur_seq, hr_sharp_seq, lr_sharp_seq, flow) in enumerate(dataloader):
-                lr_blur_seq = lr_blur_seq.cuda()
-                hr_sharp_seq = hr_sharp_seq.cuda()
-                lr_sharp_seq = lr_sharp_seq.cuda()
-                flow = flow.cuda()
+                lr_blur_seq = lr_blur_seq.to(self.device)
+                hr_sharp_seq = hr_sharp_seq.to(self.device)
+                lr_sharp_seq = lr_sharp_seq.to(self.device)
+                flow = flow.to(self.device)
 
                 result_dict = self.model(lr_blur_seq, hr_sharp_seq)
 
@@ -248,8 +253,11 @@ class Trainer:
         self.model.eval()
 
         with torch.no_grad():
-            for idx, (lr_blur_seq, filename) in enumerate(dataloader):
-                lr_blur_seq = lr_blur_seq.cuda()
+            idx = -1
+            for lr_blur_seq, filename in tqdm(
+                    dataloader, total=len(dataloader), desc="Validating"):
+                idx += 1
+                lr_blur_seq = lr_blur_seq.to(self.device)
 
                 result_dict = self.model(lr_blur_seq)
                 output = result_dict['output']
